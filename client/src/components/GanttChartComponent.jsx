@@ -70,10 +70,7 @@ function GanttChartComponent({ schedule, machines }) {
       },
       y: {
         type: 'category',
-        labels: machineIds.map(id => {
-          const machine = machines.find(m => m.id.toString() === id);
-          return machine ? machine.name : id;
-        }), // Use machine names
+        labels: machineIds, // Use machine numbers (IDs) only
         title: {
           display: true,
           text: 'Machine',
