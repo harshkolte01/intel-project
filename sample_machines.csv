@@ -1,0 +1,13 @@
+name,status,priority
+CNC Machine 1,available,1
+CNC Machine 2,available,1
+Welding Station 1,maintenance,2
+Assembly Line A,available,3
+Assembly Line B,offline,2
+Quality Control Station,available,1
+Packaging Machine 1,available,3
+Packaging Machine 2,available,3
+Drilling Machine,maintenance,2
+Cutting Machine,available,1
+Painting Booth,available,2
+Testing Station,available,1 

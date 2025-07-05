@@ -9,6 +9,8 @@ from sqlalchemy import create_engine, text
 from ortools.sat.python import cp_model
 import uuid
 import plotly.colors as pc
+import io
+import time
 
 # Page configuration
 st.set_page_config(
@@ -39,12 +41,25 @@ def get_db_connection():
         return None
 
 def init_database():
-    """Initialize database tables"""
-    engine = get_db_connection()
-    if not engine:
-        return
+    """Initialize database tables with loading animation"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     
     try:
+        status_text.text("🔄 Connecting to database...")
+        progress_bar.progress(20)
+        time.sleep(0.5)
+        
+        engine = get_db_connection()
+        if not engine:
+            status_text.text("❌ Database connection failed!")
+            progress_bar.progress(0)
+            return
+        
+        status_text.text("📋 Creating machines table...")
+        progress_bar.progress(40)
+        time.sleep(0.5)
+        
         with engine.connect() as conn:
             # Create machines table
             conn.execute(text("""
@@ -57,6 +72,10 @@ def init_database():
                 );
             """))
             
+            status_text.text("📋 Creating jobs table...")
+            progress_bar.progress(60)
+            time.sleep(0.5)
+            
             # Create jobs table
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -66,9 +85,25 @@ def init_database():
                 );
             """))
             
+            status_text.text("💾 Committing changes...")
+            progress_bar.progress(80)
+            time.sleep(0.5)
+            
             conn.commit()
-            st.success("Database initialized successfully!")
+            
+            status_text.text("✅ Database initialized successfully!")
+            progress_bar.progress(100)
+            time.sleep(1)
+            
+            # Clear the progress indicators
+            progress_bar.empty()
+            status_text.empty()
+            
+            st.success("🎉 Database initialized successfully!")
+            
     except Exception as e:
+        status_text.text("❌ Database initialization failed!")
+        progress_bar.progress(0)
         st.error(f"Database initialization error: {e}")
 
 def load_data():
@@ -132,6 +167,196 @@ def save_job(job_data):
             st.success(f"Job '{job_data['job_id']}' saved successfully!")
     except Exception as e:
         st.error(f"Error saving job: {e}")
+
+def upload_machines_from_csv(uploaded_file):
+    """Upload machines from CSV file with loading animation"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    try:
+        status_text.text("📖 Reading CSV file...")
+        progress_bar.progress(20)
+        time.sleep(0.3)
+        
+        df = pd.read_csv(uploaded_file)
+        required_columns = ['name', 'status', 'priority']
+        
+        if not all(col in df.columns for col in required_columns):
+            st.error(f"CSV must contain columns: {required_columns}")
+            progress_bar.empty()
+            status_text.empty()
+            return
+        
+        status_text.text("🔍 Validating data...")
+        progress_bar.progress(40)
+        time.sleep(0.3)
+        
+        total_rows = len(df)
+        success_count = 0
+        
+        status_text.text("💾 Uploading machines to database...")
+        progress_bar.progress(60)
+        
+        for idx, row in df.iterrows():
+            try:
+                machine_data = {
+                    'name': row['name'],
+                    'status': row['status'].lower(),
+                    'priority': int(row['priority'])
+                }
+                
+                # Save to database
+                engine = get_db_connection()
+                if engine:
+                    with engine.connect() as conn:
+                        conn.execute(text("""
+                            INSERT INTO machines (name, status, priority, available_from)
+                            VALUES (:name, :status, :priority, :available_from)
+                        """), {
+                            'name': machine_data['name'],
+                            'status': machine_data['status'],
+                            'priority': machine_data['priority'],
+                            'available_from': datetime.now()
+                        })
+                        conn.commit()
+                        success_count += 1
+                
+                # Update progress
+                progress = 60 + (idx + 1) / total_rows * 30
+                progress_bar.progress(int(progress))
+                
+            except Exception as e:
+                st.warning(f"Error uploading machine '{row['name']}': {e}")
+                continue
+        
+        status_text.text("🔄 Refreshing data...")
+        progress_bar.progress(90)
+        time.sleep(0.3)
+        
+        load_data()
+        
+        status_text.text("✅ Upload completed!")
+        progress_bar.progress(100)
+        time.sleep(1)
+        
+        # Clear the progress indicators
+        progress_bar.empty()
+        status_text.empty()
+        
+        st.success(f"🎉 Successfully uploaded {success_count} machines!")
+        
+    except Exception as e:
+        status_text.text("❌ Upload failed!")
+        progress_bar.progress(0)
+        st.error(f"Error uploading machines: {e}")
+
+def upload_jobs_from_csv(uploaded_file):
+    """Upload jobs from CSV file with loading animation"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    try:
+        status_text.text("📖 Reading CSV file...")
+        progress_bar.progress(20)
+        time.sleep(0.3)
+        
+        df = pd.read_csv(uploaded_file)
+        required_columns = ['job_id', 'operations']
+        
+        if not all(col in df.columns for col in required_columns):
+            st.error(f"CSV must contain columns: {required_columns}")
+            progress_bar.empty()
+            status_text.empty()
+            return
+        
+        status_text.text("🔍 Validating JSON data...")
+        progress_bar.progress(40)
+        time.sleep(0.3)
+        
+        total_rows = len(df)
+        success_count = 0
+        
+        status_text.text("💾 Uploading jobs to database...")
+        progress_bar.progress(60)
+        
+        for idx, row in df.iterrows():
+            try:
+                # Parse operations from JSON string
+                operations = json.loads(row['operations'])
+                job_data = {
+                    'job_id': row['job_id'],
+                    'operations': operations
+                }
+                
+                # Save to database
+                engine = get_db_connection()
+                if engine:
+                    with engine.connect() as conn:
+                        conn.execute(text("""
+                            INSERT INTO jobs (job_id, operations)
+                            VALUES (:job_id, :operations)
+                        """), {
+                            'job_id': job_data['job_id'],
+                            'operations': json.dumps(job_data['operations'])
+                        })
+                        conn.commit()
+                        success_count += 1
+                
+                # Update progress
+                progress = 60 + (idx + 1) / total_rows * 30
+                progress_bar.progress(int(progress))
+                
+            except json.JSONDecodeError:
+                st.warning(f"Invalid JSON in operations for job {row['job_id']}")
+                continue
+            except Exception as e:
+                st.warning(f"Error uploading job '{row['job_id']}': {e}")
+                continue
+        
+        status_text.text("🔄 Refreshing data...")
+        progress_bar.progress(90)
+        time.sleep(0.3)
+        
+        load_data()
+        
+        status_text.text("✅ Upload completed!")
+        progress_bar.progress(100)
+        time.sleep(1)
+        
+        # Clear the progress indicators
+        progress_bar.empty()
+        status_text.empty()
+        
+        st.success(f"🎉 Successfully uploaded {success_count} jobs!")
+        
+    except Exception as e:
+        status_text.text("❌ Upload failed!")
+        progress_bar.progress(0)
+        st.error(f"Error uploading jobs: {e}")
+
+def create_sample_csv_files():
+    """Create sample CSV files for download"""
+    
+    # Sample machines data
+    machines_data = {
+        'name': ['Machine A', 'Machine B', 'Machine C', 'Machine D'],
+        'status': ['available', 'maintenance', 'available', 'offline'],
+        'priority': [1, 2, 3, 1]
+    }
+    machines_df = pd.DataFrame(machines_data)
+    
+    # Sample jobs data
+    jobs_data = {
+        'job_id': ['JOB001', 'JOB002', 'JOB003'],
+        'operations': [
+            '[{"machine_id": "1", "duration": "30"}, {"machine_id": "2", "duration": "20"}]',
+            '[{"machine_id": "2", "duration": "15"}, {"machine_id": "1", "duration": "25"}]',
+            '[{"machine_id": "1", "duration": "10"}, {"machine_id": "3", "duration": "45"}]'
+        ]
+    }
+    jobs_df = pd.DataFrame(jobs_data)
+    
+    return machines_df, jobs_df
 
 # Genetic Algorithm for scheduling
 def generate_schedule(jobs, machines):
@@ -218,7 +443,6 @@ if st.button("Initialize Database"):
 
 load_data()
 
-# Main app
 st.title("🏭 Smart Scheduling System")
 
 # Database status
@@ -228,11 +452,31 @@ if engine:
 else:
     st.sidebar.error("❌ Database Connection Failed")
 
-# Sidebar for navigation
-page = st.sidebar.selectbox(
-    "Navigation",
-    ["Dashboard", "Add Machine", "Add Job", "Gantt Chart", "Schedule Table"]
-)
+# Sidebar Navigation Buttons
+st.sidebar.markdown("---")
+dashboard_clicked = st.sidebar.button("📊 Dashboard")
+add_machine_clicked = st.sidebar.button("➕ Add Machine")
+add_job_clicked = st.sidebar.button("📋 Add Job")
+gantt_clicked = st.sidebar.button("📈 Gantt Chart")
+schedule_clicked = st.sidebar.button("📋 Schedule Table")
+refresh_clicked = st.sidebar.button("🔄 Refresh Data")
+st.sidebar.markdown("---")
+
+if refresh_clicked:
+    load_data()
+    st.sidebar.success("Data refreshed successfully!")
+
+# Navigation logic
+if add_machine_clicked:
+    page = "Add Machine"
+elif add_job_clicked:
+    page = "Add Job"
+elif gantt_clicked:
+    page = "Gantt Chart"
+elif schedule_clicked:
+    page = "Schedule Table"
+else:
+    page = "Dashboard"  # Default page
 
 if page == "Dashboard":
     st.header("📊 Dashboard")
@@ -262,62 +506,116 @@ if page == "Dashboard":
 elif page == "Add Machine":
     st.header("➕ Add New Machine")
     
-    with st.form("machine_form"):
-        machine_name = st.text_input("Machine Name", placeholder="Enter machine name")
-        status = st.selectbox("Status", ["available", "maintenance", "offline"])
-        priority = st.selectbox("Priority", [1, 2, 3], format_func=lambda x: {1: "High", 2: "Medium", 3: "Low"}[x])
+    # Create tabs for manual entry and file upload
+    tab1, tab2 = st.tabs(["📝 Manual Entry", "📁 Upload CSV"])
+    
+    with tab1:
+        with st.form("machine_form"):
+            machine_name = st.text_input("Machine Name", placeholder="Enter machine name")
+            status = st.selectbox("Status", ["available", "maintenance", "offline"])
+            priority = st.selectbox("Priority", [1, 2, 3], format_func=lambda x: {1: "High", 2: "Medium", 3: "Low"}[x])
+            
+            submitted = st.form_submit_button("Add Machine")
+            if submitted and machine_name:
+                machine_data = {
+                    'name': machine_name,
+                    'status': status,
+                    'priority': priority
+                }
+                save_machine(machine_data)
+    
+    with tab2:
+        st.subheader("📥 Upload Machines from CSV")
         
-        submitted = st.form_submit_button("Add Machine")
-        if submitted and machine_name:
-            machine_data = {
-                'name': machine_name,
-                'status': status,
-                'priority': priority
-            }
-            save_machine(machine_data)
+        # Download sample machines CSV
+        machines_df, _ = create_sample_csv_files()
+        csv_machines = machines_df.to_csv(index=False)
+        st.download_button(
+            label="📄 Download Sample Machines CSV",
+            data=csv_machines,
+            file_name="sample_machines.csv",
+            mime="text/csv"
+        )
+        
+        uploaded_machines = st.file_uploader(
+            "Choose a machines CSV file",
+            type=['csv'],
+            key="machines_upload"
+        )
+        
+        if uploaded_machines is not None:
+            if st.button("Upload Machines"):
+                upload_machines_from_csv(uploaded_machines)
 
 elif page == "Add Job":
     st.header("📋 Add New Job")
     
-    with st.form("job_form"):
-        job_id = st.text_input("Job ID", placeholder="Enter job ID")
-        
-        st.subheader("Operations")
-        operations = []
-        
-        # Dynamic operations
-        num_operations = st.number_input("Number of Operations", min_value=1, max_value=10, value=1)
-        
-        for i in range(num_operations):
-            st.write(f"Operation {i+1}")
-            col1, col2 = st.columns(2)
-            with col1:
-                machine_id = st.selectbox(
-                    f"Machine for Operation {i+1}",
-                    options=[m['id'] for m in st.session_state.machines],
-                    format_func=lambda x: f"Machine {x}",
-                    key=f"machine_{i}"
-                )
-            with col2:
-                duration = st.number_input(
-                    f"Duration (minutes) for Operation {i+1}",
-                    min_value=1,
-                    value=30,
-                    key=f"duration_{i}"
-                )
+    # Create tabs for manual entry and file upload
+    tab1, tab2 = st.tabs(["📝 Manual Entry", "📁 Upload CSV"])
+    
+    with tab1:
+        with st.form("job_form"):
+            job_id = st.text_input("Job ID", placeholder="Enter job ID")
             
-            operations.append({
-                "machine_id": str(machine_id),
-                "duration": str(duration)
-            })
+            st.subheader("Operations")
+            operations = []
+            
+            # Dynamic operations
+            num_operations = st.number_input("Number of Operations", min_value=1, max_value=10, value=1)
+            
+            for i in range(num_operations):
+                st.write(f"Operation {i+1}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    machine_id = st.selectbox(
+                        f"Machine for Operation {i+1}",
+                        options=[m['id'] for m in st.session_state.machines],
+                        format_func=lambda x: f"Machine {x}",
+                        key=f"machine_{i}"
+                    )
+                with col2:
+                    duration = st.number_input(
+                        f"Duration (minutes) for Operation {i+1}",
+                        min_value=1,
+                        value=30,
+                        key=f"duration_{i}"
+                    )
+                
+                operations.append({
+                    "machine_id": str(machine_id),
+                    "duration": str(duration)
+                })
+            
+            submitted = st.form_submit_button("Add Job")
+            if submitted and job_id and operations:
+                job_data = {
+                    'job_id': job_id,
+                    'operations': operations
+                }
+                save_job(job_data)
+    
+    with tab2:
+        st.subheader("📥 Upload Jobs from CSV")
         
-        submitted = st.form_submit_button("Add Job")
-        if submitted and job_id and operations:
-            job_data = {
-                'job_id': job_id,
-                'operations': operations
-            }
-            save_job(job_data)
+        # Download sample jobs CSV
+        _, jobs_df = create_sample_csv_files()
+        csv_jobs = jobs_df.to_csv(index=False)
+        st.download_button(
+            label="📄 Download Sample Jobs CSV",
+            data=csv_jobs,
+            file_name="sample_jobs.csv",
+            mime="text/csv"
+        )
+        
+        uploaded_jobs = st.file_uploader(
+            "Choose a jobs CSV file",
+            type=['csv'],
+            key="jobs_upload"
+        )
+        
+        if uploaded_jobs is not None:
+            if st.button("Upload Jobs"):
+                upload_jobs_from_csv(uploaded_jobs)
 
 elif page == "Gantt Chart":
     st.header("📊 Gantt Chart")
