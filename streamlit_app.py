@@ -29,6 +29,8 @@ if 'jobs' not in st.session_state:
     st.session_state.jobs = []
 if 'schedule' not in st.session_state:
     st.session_state.schedule = []
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "Dashboard"
 
 # Database functions
 def get_db_connection():
@@ -454,29 +456,54 @@ else:
 
 # Sidebar Navigation Buttons
 st.sidebar.markdown("---")
-dashboard_clicked = st.sidebar.button("📊 Dashboard")
-add_machine_clicked = st.sidebar.button("➕ Add Machine")
-add_job_clicked = st.sidebar.button("📋 Add Job")
-gantt_clicked = st.sidebar.button("📈 Gantt Chart")
-schedule_clicked = st.sidebar.button("📋 Schedule Table")
+st.sidebar.markdown("### 📱 Navigation")
+
+# Create navigation buttons with visual feedback
+current_page = st.session_state.current_page
+
+dashboard_clicked = st.sidebar.button(
+    "📊 Dashboard" + (" ✅" if current_page == "Dashboard" else ""),
+    key="nav_dashboard"
+)
+add_machine_clicked = st.sidebar.button(
+    "➕ Add Machine" + (" ✅" if current_page == "Add Machine" else ""),
+    key="nav_add_machine"
+)
+add_job_clicked = st.sidebar.button(
+    "📋 Add Job" + (" ✅" if current_page == "Add Job" else ""),
+    key="nav_add_job"
+)
+gantt_clicked = st.sidebar.button(
+    "📈 Gantt Chart" + (" ✅" if current_page == "Gantt Chart" else ""),
+    key="nav_gantt"
+)
+schedule_clicked = st.sidebar.button(
+    "📋 Schedule Table" + (" ✅" if current_page == "Schedule Table" else ""),
+    key="nav_schedule"
+)
+
+st.sidebar.markdown("---")
 refresh_clicked = st.sidebar.button("🔄 Refresh Data")
 st.sidebar.markdown("---")
+
+# Update current page based on button clicks
+if dashboard_clicked:
+    st.session_state.current_page = "Dashboard"
+elif add_machine_clicked:
+    st.session_state.current_page = "Add Machine"
+elif add_job_clicked:
+    st.session_state.current_page = "Add Job"
+elif gantt_clicked:
+    st.session_state.current_page = "Gantt Chart"
+elif schedule_clicked:
+    st.session_state.current_page = "Schedule Table"
 
 if refresh_clicked:
     load_data()
     st.sidebar.success("Data refreshed successfully!")
 
-# Navigation logic
-if add_machine_clicked:
-    page = "Add Machine"
-elif add_job_clicked:
-    page = "Add Job"
-elif gantt_clicked:
-    page = "Gantt Chart"
-elif schedule_clicked:
-    page = "Schedule Table"
-else:
-    page = "Dashboard"  # Default page
+# Use the current page from session state
+page = st.session_state.current_page
 
 if page == "Dashboard":
     st.header("📊 Dashboard")
